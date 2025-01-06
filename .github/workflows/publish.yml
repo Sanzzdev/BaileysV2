@@ -3,7 +3,7 @@ name: "Publish npm package"
 on:
   push:
     branches:
-      - main # Jalankan workflow hanya jika ada push ke branch `main`
+      - master # Jalankan workflow hanya jika ada push ke branch `main`
 
 jobs:
   publish:
