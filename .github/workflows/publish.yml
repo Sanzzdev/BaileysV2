@@ -23,7 +23,7 @@ jobs:
         run: yarn install
 
       - name: Update package name
-        run: npm pkg set name=@xlanzzdev/baileys
+        run: npm pkg set name=@xlanzzdev/proyo
 
       - name: Build package
         run: yarn build:all
