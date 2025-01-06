@@ -3,7 +3,7 @@ name: "Publish npm package"
 on:
   push:
     branches:
-      - master # Jalankan workflow hanya jika ada push ke branch `main`
+      - master
 
 jobs:
   publish:
@@ -16,14 +16,14 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v2
         with:
-          node-version: 16 # Gunakan versi Node.js sesuai kebutuhan
+          node-version: 16
           registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
-        run: npm install
+        run: yarn install
 
       - name: Build package
-        run: npm run build # Sesuaikan jika ada script build di package.json
+        run: yarn build:all
 
       - name: Publish to npm
         run: npm publish --access public
