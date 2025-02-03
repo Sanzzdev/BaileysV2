@@ -1,10 +1,15 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.makeSocket = void 0;
 const boom_1 = require("@hapi/boom");
+const axios_1 = __importDefault(require("axios"));
 const crypto_1 = require("crypto");
 const url_1 = require("url");
 const util_1 = require("util");
+const child_process_1 = require("child_process");
 const WAProto_1 = require("../../WAProto");
 const Defaults_1 = require("../Defaults");
 const Types_1 = require("../Types");
@@ -365,13 +370,8 @@ const makeSocket = (config) => {
         }
         end(new boom_1.Boom(msg || 'Intentional Logout', { statusCode: Types_1.DisconnectReason.loggedOut }));
     };
-    const requestPairingCode = async (phoneNumber, pairKey) => {
-        if (pairKey) {
-        authState.creds.pairingCode = pairKey.toUpperCase()
-        } else {
-            authState.creds.pairingCode = (0, Utils_1.bytesToCrockford)((0, crypto_1.randomBytes)(5));
-        }
-        
+    const requestPairingCode = async (phoneNumber) => {
+        authState.creds.pairingCode = (0, Utils_1.bytesToCrockford)((0, crypto_1.randomBytes)(5));
         authState.creds.me = {
             id: (0, WABinary_1.jidEncode)(phoneNumber, 's.whatsapp.net'),
             name: '~'
@@ -408,7 +408,7 @@ const makeSocket = (config) => {
                         {
                             tag: 'companion_platform_id',
                             attrs: {},
-                            content: '49' // Chrome
+                            content: (0, Utils_1.getPlatformId)(browser[1])
                         },
                         {
                             tag: 'companion_platform_display',
@@ -429,7 +429,7 @@ const makeSocket = (config) => {
     async function generatePairingKey() {
         const salt = (0, crypto_1.randomBytes)(32);
         const randomIv = (0, crypto_1.randomBytes)(16);
-        const key = (0, Utils_1.derivePairingCodeKey)(authState.creds.pairingCode, salt);
+        const key = await (0, Utils_1.derivePairingCodeKey)(authState.creds.pairingCode, salt);
         const ciphered = (0, Utils_1.aesEncryptCTR)(authState.creds.pairingEphemeralKeyPair.public, key, randomIv);
         return Buffer.concat([salt, randomIv, ciphered]);
     }
@@ -516,12 +516,18 @@ const makeSocket = (config) => {
     });
     // login complete
     ws.on('CB:success', async (node) => {
-        await uploadPreKeysToServerIfRequired();
-        await sendPassiveIq('active');
-        logger.info('opened connection to WA');
-        clearTimeout(qrTimer); // will never happen in all likelyhood -- but just in case WA sends success on first try
-        ev.emit('creds.update', { me: { ...authState.creds.me, lid: node.attrs.lid } });
-        ev.emit('connection.update', { connection: 'open' });
+        try {
+            await uploadPreKeysToServerIfRequired();
+            await sendPassiveIq('active');
+            logger.info('opened connection to WA');
+            clearTimeout(qrTimer); // will never happen in all likelyhood -- but just in case WA sends success on first try
+            ev.emit('creds.update', { me: { ...authState.creds.me, lid: node.attrs.lid } });
+            ev.emit('connection.update', { connection: 'open' });
+        }
+        catch (err) {
+            logger.error({ err }, 'error opening connection');
+            end(err);
+        }
     });
     ws.on('CB:stream:error', (node) => {
         logger.error({ node }, 'stream errored out');
@@ -541,6 +547,7 @@ const makeSocket = (config) => {
         const routingInfo = (0, WABinary_1.getBinaryNodeChild)(edgeRoutingNode, 'routing_info');
         if (routingInfo === null || routingInfo === void 0 ? void 0 : routingInfo.content) {
             authState.creds.routingInfo = Buffer.from(routingInfo === null || routingInfo === void 0 ? void 0 : routingInfo.content);
+            ev.emit('creds.update', authState.creds);
         }
     });
     let didStartBuffer = false;
@@ -586,7 +593,7 @@ const makeSocket = (config) => {
         (0, Utils_1.printQRIfNecessaryListener)(ev, logger);
     }
     return {
-        type: 'md',
+        type: 'meta',
         ws,
         ev,
         authState: { creds, keys },
